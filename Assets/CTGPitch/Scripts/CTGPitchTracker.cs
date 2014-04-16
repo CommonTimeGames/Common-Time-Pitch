@@ -1,8 +1,8 @@
 ﻿using System;
-using UnityEngine;
 using System.Collections;
 using System.Runtime.InteropServices;
 using System.Threading;
+using UnityEngine;
 
 public class CTGPitchTracker : MonoBehaviour {
 
@@ -11,6 +11,9 @@ public class CTGPitchTracker : MonoBehaviour {
 	public delegate void NoteDelegate(string noteName);
 	public static event NoteDelegate NoteDetected;
 
+	private static CTGPitchTracker _instance;
+
+	private static readonly int DB_THRESHOLD = -40;
 	private static readonly int MAX_BUFFER_SIZE = 4096;
 	private static readonly int SAMPLE_RATE = 44100;
 	private static readonly double TIME_THRESHOLD = 0.25;
@@ -28,17 +31,29 @@ public class CTGPitchTracker : MonoBehaviour {
 	private int lastPosition;
 	private int currentPosition;
 
+	private double lastPitch;
 	private string lastNote;
 	private float noteDeltaTime;
 
 	void Start () {
 
-		/* Check to see if the device has any microphones */
+		/* Check if any instances of the
+		 * pitch tracker have been initialized;
+		 * quit if this is the case */
 
+		if(_instance == null){
+			_instance = this;
+		}
+		else{
+			Debug.LogError("Only one instance of CTGPitchTracker may be active in the scene!");
+			enabled = false;
+			return;
+		}
+
+		/* Check to see if the device has any microphones */
 		hasMicrophone = (Microphone.devices != null && Microphone.devices.Length > 0);
 
 		if(!hasMicrophone){
-
 			/* Stop initialization if 
 			 * no microphones
 			 * were found. */
@@ -70,6 +85,7 @@ public class CTGPitchTracker : MonoBehaviour {
 
 		lastNote = "";
 		noteDeltaTime = 0;
+		lastPitch = 0;
 	}
 
 	public double GetCurrentPitch(){
@@ -78,35 +94,58 @@ public class CTGPitchTracker : MonoBehaviour {
 		}
 
 		currentPosition = Microphone.GetPosition("");
-			
-		buffer.GetData(sampleBuffer, lastPosition);
-		Array.Copy(sampleBuffer, doubleSampleBuffer, sampleBuffer.Length);
+
+		/* No new samples were available... */
+		if(lastPosition == currentPosition){
+			return lastPitch;
+		}
+
 		var samplesRead = (currentPosition-lastPosition);
-			
+
+		/* Sample position could wrap around
+		 * to the beginning. */
 		if(samplesRead < 0){
 			samplesRead += SAMPLE_RATE;
 		}
-			
-		lastPosition = currentPosition;	
-			
-			//Debug.Log ("Last mic pos.: " + lastPosition + ", Current mic pos.: " + currentPosition + ". Samples read: " + samplesRead);
-		return tracker.computePitch(doubleSampleBuffer, lastPosition, samplesRead);
+
+		buffer.GetData(sampleBuffer, lastPosition);
+		Array.Copy(sampleBuffer, doubleSampleBuffer, Math.Min(samplesRead, sampleBuffer.Length));
+
+		//Debug.Log ("Last mic pos.: " + lastPosition + ", Current mic pos.: " + currentPosition + ". Samples read: " + samplesRead);
+		lastPosition = currentPosition;
+
+		var sum = 0.0;
+		for(int i = 0; i < samplesRead; i++){
+			sum += sampleBuffer[i] * sampleBuffer[i];
+		}
+
+		var rms = Math.Sqrt(sum/samplesRead);
+		var decibel = 20 * Math.Log10(rms);
+
+		//Debug.Log ("RMS val: " + rms + ", dB val: " + decibel);
+
+		if(decibel < DB_THRESHOLD){
+			lastPitch = 0;
+		} else{
+			lastPitch = tracker.computePitch(doubleSampleBuffer, 0, Math.Min(samplesRead, doubleSampleBuffer.Length));
+		}
+
+		return lastPitch;
 	}
 	
 	// Update is called once per frame
 	void Update () {
 
 		var currentPitch = GetCurrentPitch();
+		var currentAccuracy = Notation.GetNoteAccuracy((float)currentPitch);
 		var note = Notation.GetNoteName((float)currentPitch);
-		var accuracy = Notation.GetNoteAccuracy(note, (float)currentPitch);
 
 		CurrentNote = CurrentNote ?? new Note ();
 		CurrentNote.Pitch = currentPitch;
 		CurrentNote.Name = note;
-		CurrentNote.Accuracy = accuracy;
+		CurrentNote.Accuracy = currentAccuracy;
 
 		if(currentPitch > 0 && lastNote == note){
-			
 			noteDeltaTime += Time.deltaTime;
 			
 			if(noteDeltaTime >= TIME_THRESHOLD && NoteDetected != null){
@@ -181,6 +220,20 @@ public class CTGPitchTracker : MonoBehaviour {
 			nativeThread.Join();
 			nativeThread = null;
 		}
+	}
+
+	private float getSmoothAverage(float [] vals){
+		float minVal = float.MaxValue;
+		float maxVal = 0;
+		float sum = 0;
+
+		foreach(var val in vals){
+			minVal = Mathf.Min(val, minVal);
+			maxVal = Mathf.Max(val, maxVal);
+			sum += val;
+		}
+
+		return (sum - minVal - maxVal) / (vals.Length - 2);
 	}
 
 	/* Native methods. These should only be

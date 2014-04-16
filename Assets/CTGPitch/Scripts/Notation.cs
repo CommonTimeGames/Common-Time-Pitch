@@ -67,7 +67,7 @@ public class Notation {
 		return noteIndex;
 	}
 
-	public static double GetNoteAccuracy(string targetNote, float detectedFrequency){
+	public static float GetNoteAccuracy(string targetNote, float detectedFrequency){
 		int noteIndex = -1;
 		
 		if(targetNote == Notation.NO_NOTE){
@@ -92,6 +92,10 @@ public class Notation {
 		}
 		
 		return 1200 * Mathf.Log10(detectedFrequency/closestFrequency) / Mathf.Log10(2);
+	}
+
+	public static float GetNoteAccuracy(float detectedFrequency){
+		return GetNoteAccuracy(GetNoteName(detectedFrequency), detectedFrequency);
 	}
 	
 }
