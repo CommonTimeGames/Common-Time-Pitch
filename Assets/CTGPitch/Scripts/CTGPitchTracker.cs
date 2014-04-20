@@ -9,7 +9,7 @@ public class CTGPitchTracker : MonoBehaviour {
 	public Note CurrentNote { get; set; }
 
 	public delegate void NoteDelegate(string noteName);
-	public static event NoteDelegate NoteDetected;
+	public event NoteDelegate NoteDetected;
 
 	private static CTGPitchTracker _instance;
 
@@ -32,7 +32,8 @@ public class CTGPitchTracker : MonoBehaviour {
 	private int currentPosition;
 
 	private double lastPitch;
-	private string lastNote;
+	private string lastNoteCalculated;
+	private string currrentDetectedNote;
 	private float noteDeltaTime;
 
 	void Start () {
@@ -83,12 +84,15 @@ public class CTGPitchTracker : MonoBehaviour {
 			buffer = Microphone.Start("", true, 1, SAMPLE_RATE);
 		}
 
-		lastNote = "";
+		lastNoteCalculated = currrentDetectedNote = "";
 		noteDeltaTime = 0;
 		lastPitch = 0;
 	}
 
 	public double GetCurrentPitch(){
+		/* On iOS/Android, just return
+		 * the pitch calculated on the
+		 * native audio thread. */
 		if(usingNativePlugin()){
 			return CTGGetCurrentPitch();
 		}
@@ -114,8 +118,12 @@ public class CTGPitchTracker : MonoBehaviour {
 		//Debug.Log ("Last mic pos.: " + lastPosition + ", Current mic pos.: " + currentPosition + ". Samples read: " + samplesRead);
 		lastPosition = currentPosition;
 
+		/* Calculate signal level in dB
+		 * to determine if there is a 
+		 * sound to be processed in the
+		 * first place. */
 		var sum = 0.0;
-		for(int i = 0; i < samplesRead; i++){
+		for(int i = 0; i < samplesRead && i < sampleBuffer.Length; i++){
 			sum += sampleBuffer[i] * sampleBuffer[i];
 		}
 
@@ -145,16 +153,22 @@ public class CTGPitchTracker : MonoBehaviour {
 		CurrentNote.Name = note;
 		CurrentNote.Accuracy = currentAccuracy;
 
-		if(currentPitch > 0 && lastNote == note){
+
+		currrentDetectedNote = currentPitch > 0 ? currrentDetectedNote : "";
+
+		if(currentPitch > 0 && lastNoteCalculated == note){
 			noteDeltaTime += Time.deltaTime;
 			
-			if(noteDeltaTime >= TIME_THRESHOLD && NoteDetected != null){
+			if(noteDeltaTime >= TIME_THRESHOLD 
+			   && currrentDetectedNote != note
+			   && NoteDetected != null){
 				NoteDetected(note);
+				currrentDetectedNote = note;
 			}
 		}
 		else{
 			noteDeltaTime = 0;
-			lastNote = note;
+			lastNoteCalculated = note;
 		}
 	}
 
