@@ -36,12 +36,11 @@ public class CTGPitchTracker : MonoBehaviour {
 	private string currrentDetectedNote;
 	private float noteDeltaTime;
 
-	void Start () {
-
+	void Awake(){
 		/* Check if any instances of the
 		 * pitch tracker have been initialized;
 		 * quit if this is the case */
-
+		
 		if(_instance == null){
 			_instance = this;
 		}
@@ -50,7 +49,9 @@ public class CTGPitchTracker : MonoBehaviour {
 			enabled = false;
 			return;
 		}
+	}
 
+	void Start () {
 		/* Check to see if the device has any microphones */
 		hasMicrophone = (Microphone.devices != null && Microphone.devices.Length > 0);
 
@@ -300,4 +301,12 @@ public class CTGPitchTracker : MonoBehaviour {
 	private static double CTGGetCurrentPitch() { Debug.Log("CTGPitchTrackerGetCurrentPitch"); return 0;}
 
 	#endif
+
+	public static CTGPitchTracker Tracker
+	{
+		get
+		{
+			return _instance;
+		}
+	}
 }
